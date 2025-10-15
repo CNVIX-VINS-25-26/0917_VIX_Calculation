@@ -37,7 +37,7 @@ CNVIX 的编制思想与美国 CBOE VIX 类似：
 ![CNVIX](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Cmathrm%7BCNVIX%7D%20%3D%20100%20%5Ctimes%20%5Csqrt%7B%5Csigma_%7B30%7D%5E2%20%5Ctimes%20%5Cfrac%7B365%7D%7B30%7D%7D)
 
 
-## 需要的`option_50ETF_all.csv`中的字段
+## 数据中需要的字段
 | 字段名                      | 用法                           |
 | ------------------------ | ---------------------------- |
 | `exe_mode`               | 区分 call/put                  |
@@ -54,8 +54,6 @@ CNVIX 的编制思想与美国 CBOE VIX 类似：
 - 按 `date` 分组  
 - 对每个日期选出最近两组到期日的期权  
 - 按 `exe_price` 匹配 call / put 成对数据  
-
----
 
 ### 2. 计算远期价格 \( F \)
 由认购认沽平价关系得到：
