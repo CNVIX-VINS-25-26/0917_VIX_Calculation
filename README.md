@@ -15,7 +15,6 @@ CNVIX 的编制思想与美国 CBOE VIX 类似：
   - $T_2$: 剩余天数最接近但 > 30 天  
 - 对每个到期日计算期权方差，再插值得到 30 天方差。
 
----
 
 ### 方差计算公式
 ![sigma2](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Csigma%5E2%20%3D%20%5Cfrac%7B2e%5ErT%7D%7BT%7D%20%5Csum_i%20%5Cfrac%7B%5CDelta%20K_i%7D%7BK_i%5E2%7D%20Q(K_i)%20-%20%5Cfrac%7B1%7D%7BT%7D%5Cleft(%5Cfrac%7BF%7D%7BK_0%7D%20-%201%5Cright)%5E2)
@@ -29,20 +28,16 @@ CNVIX 的编制思想与美国 CBOE VIX 类似：
 - $T$：年化到期时间  
   ![T](https://math.vercel.app/?from=%5Cdisplaystyle%20T%20%3D%20%5Cfrac%7BD%7D%7B365%7D)
 
----
-
 ### CNVIX 方差插值
 将两个到期时间的方差线性插值得到 30 天：
 ![sigma30](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Csigma_%7B30%7D%5E2%20%3D%20%5Cfrac%7BT_1%20%5Csigma_1%5E2%20(T_2-30)%20%2B%20T_2%20%5Csigma_2%5E2%20(30-T_1)%7D%7BT_2-T_1%7D)
 
----
 
 ### 最终指数公式
 ![CNVIX](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Cmathrm%7BCNVIX%7D%20%3D%20100%20%5Ctimes%20%5Csqrt%7B%5Csigma_%7B30%7D%5E2%20%5Ctimes%20%5Cfrac%7B365%7D%7B30%7D%7D)
 
---- 
 
-## Data Needed
+## 需要的`option_50ETF_all.csv`中的字段
 | 字段名                      | 用法                           |
 | ------------------------ | ---------------------------- |
 | `exe_mode`               | 区分 call/put                  |
@@ -53,7 +48,7 @@ CNVIX 的编制思想与美国 CBOE VIX 类似：
 | `date` / `exe_enddate`   | 确定到期结构                       |
 | （需额外）无风险利率 (r)           | 可用当日 Shibor 或固定年化 3% 近似      |
 
-## 三、计算步骤概要（算法）
+## 计算步骤概要（算法）
 
 ### 1. 读取 CSV 并清洗  
 - 按 `date` 分组  
@@ -75,7 +70,6 @@ CNVIX 的编制思想与美国 CBOE VIX 类似：
 
 选取使得 \(|C-P|\) 最小的 \(K_0\)。
 
----
 
 ### 3. 计算每个执行价的中间价 \( Q(K) \)
 平均价定义为：
@@ -87,7 +81,6 @@ CNVIX 的编制思想与美国 CBOE VIX 类似：
 - 当 \(K > K_0\) 时取认购价格  
 - 当 \(K = K_0\) 时取二者均值  
 
----
 
 ### 4. 计算方差 \(\sigma^2\)
 
@@ -101,21 +94,17 @@ CNVIX 的编制思想与美国 CBOE VIX 类似：
 - \(F\)：远期价格  
 - \(K_0\)：平值行权价  
 
----
 
 ### 5. 插值得到 30 天方差
 对两组期限 \(T_1, T_2\) 的方差 \(\sigma_1^2, \sigma_2^2\) 线性插值：
 
 ![sigma30](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Csigma_%7B30%7D%5E2%20%3D%20%5Cfrac%7BT_1%5Csigma_1%5E2(T_2-30)%2BT_2%5Csigma_2%5E2(30-T_1)%7D%7BT_2-T_1%7D)
 
----
 
 ### 6. 计算最终 CNVIX 指数
 将方差年化并取平方根：
 
 ![CNVIX](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Cmathrm%7BCNVIX%7D%20%3D%20100%20%5Ctimes%20%5Csqrt%7B%5Csigma_%7B30%7D%5E2%20%5Ctimes%20%5Cfrac%7B365%7D%7B30%7D%7D)
-
----
 
 以上步骤即可从期权 CSV 数据中逐日计算得到 CNVIX 指数。
 
