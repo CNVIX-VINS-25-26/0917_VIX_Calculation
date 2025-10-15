@@ -3,21 +3,122 @@
 
 This repo provides tools to calculate the (CN)VIX index out of given data.
 
-## CNVIX (上证50ETF波动率指数) 计算原理
+## CNVIX 指数的原理
 
-CNVIX 的核心计算公式来源于《上证50ETF波动率指数编制方案》：
+CNVIX 的编制思想与美国 CBOE VIX 类似：  
+它反映未来 30 天的隐含波动率预期，是通过不同执行价期权的隐含波动率加权平均得到的“无方向波动率指标”。
 
-![CNVIX公式](https://latex.codecogs.com/svg.image?\sigma^2=\frac{2e^{rT}}{T}\sum_i\frac{\Delta K_i}{K_i^2}Q(K_i)-\frac{1}{T}\left(\frac{F}{K_0}-1\right)^2)
+### 主要逻辑
+- 选定目标到期时间 $T^* = 30$ 天  
+- 找到两组期权：
+  - $T_1$: 剩余天数最接近但 < 30 天  
+  - $T_2$: 剩余天数最接近但 > 30 天  
+- 对每个到期日计算期权方差，再插值得到 30 天方差。
+
+---
+
+### 方差计算公式
+![sigma2](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Csigma%5E2%20%3D%20%5Cfrac%7B2e%5ErT%7D%7BT%7D%20%5Csum_i%20%5Cfrac%7B%5CDelta%20K_i%7D%7BK_i%5E2%7D%20Q(K_i)%20-%20%5Cfrac%7B1%7D%7BT%7D%5Cleft(%5Cfrac%7BF%7D%7BK_0%7D%20-%201%5Cright)%5E2)
 
 其中：
+- $Q(K_i)$：行权价 $K_i$ 对应期权平均价格  
+- $\Delta K_i$：相邻行权价差  
+- $K_0$：使行权价刚好低于远期价 $F$  
+- $F$：由认购认沽平价关系得出  
+  ![F](https://math.vercel.app/?from=%5Cdisplaystyle%20F%20%3D%20K_i%20%2B%20e%5ErT%20(C_i%20-%20P_i))
+- $T$：年化到期时间  
+  ![T](https://math.vercel.app/?from=%5Cdisplaystyle%20T%20%3D%20%5Cfrac%7BD%7D%7B365%7D)
 
-- \( Q(K_i) \)：行权价 \(K_i\) 对应期权平均价；
-- \( \Delta K_i \)：相邻行权价差；
-- \( K_0 \)：平值期权的执行价；
-- \( F = K_i + e^{rT}(C_i - P_i) \)：远期价格；
-- 最后通过 30 天插值得到年化波动率：
+---
 
-![插值公式](https://latex.codecogs.com/svg.image?\sigma_{30}^2=\frac{T_1\sigma_1^2(T_2-30)+T_2\sigma_2^2(30-T_1)}{T_2-T_1})
+### CNVIX 方差插值
+将两个到期时间的方差线性插值得到 30 天：
+![sigma30](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Csigma_%7B30%7D%5E2%20%3D%20%5Cfrac%7BT_1%20%5Csigma_1%5E2%20(T_2-30)%20%2B%20T_2%20%5Csigma_2%5E2%20(30-T_1)%7D%7BT_2-T_1%7D)
+
+---
+
+### 最终指数公式
+![CNVIX](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Cmathrm%7BCNVIX%7D%20%3D%20100%20%5Ctimes%20%5Csqrt%7B%5Csigma_%7B30%7D%5E2%20%5Ctimes%20%5Cfrac%7B365%7D%7B30%7D%7D)
+
+--- 
+
+## Data Needed
+| 字段名                      | 用法                           |
+| ------------------------ | ---------------------------- |
+| `exe_mode`               | 区分 call/put                  |
+| `exe_price`              | 行权价 (K_i)                    |
+| `close`                  | 当日收盘价，作为 ( Q(K_i) ) 或用于远期价估计 |
+| `ptmday` 或 `ptmtradeday` | 剩余天数，用于确定 T1, T2             |
+| `us_impliedvol`          | 可以辅助验证或回算隐含波动率               |
+| `date` / `exe_enddate`   | 确定到期结构                       |
+| （需额外）无风险利率 (r)           | 可用当日 Shibor 或固定年化 3% 近似      |
+
+## 三、计算步骤概要（算法）
+
+### 1. 读取 CSV 并清洗  
+- 按 `date` 分组  
+- 对每个日期选出最近两组到期日的期权  
+- 按 `exe_price` 匹配 call / put 成对数据  
+
+---
+
+### 2. 计算远期价格 \( F \)
+由认购认沽平价关系得到：
+
+![F](https://math.vercel.app/?from=%5Cdisplaystyle%20F%20%3D%20K%20%2B%20e%5ErT%20(C%20-%20P))
+
+其中：
+- \( K \)：行权价  
+- \( C, P \)：相同执行价下的认购、认沽期权收盘价  
+- \( r \)：无风险利率  
+- \( T \)：年化剩余到期时间  
+
+选取使得 \(|C-P|\) 最小的 \(K_0\)。
+
+---
+
+### 3. 计算每个执行价的中间价 \( Q(K) \)
+平均价定义为：
+
+![Q](https://math.vercel.app/?from=%5Cdisplaystyle%20Q(K)%3D%5Cfrac%7BC(K)%2BP(K)%7D%7B2%7D)
+
+或按规则：
+- 当 \(K < K_0\) 时取认沽价格  
+- 当 \(K > K_0\) 时取认购价格  
+- 当 \(K = K_0\) 时取二者均值  
+
+---
+
+### 4. 计算方差 \(\sigma^2\)
+
+核心公式：
+
+![sigma2](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Csigma%5E2%20%3D%20%5Cfrac%7B2e%5ErT%7D%7BT%7D%20%5Csum_i%20%5Cfrac%7B%5CDelta%20K_i%7D%7BK_i%5E2%7D%20Q(K_i)%20-%20%5Cfrac%7B1%7D%7BT%7D%20%5Cleft(%5Cfrac%7BF%7D%7BK_0%7D-1%5Cright)%5E2)
+
+其中：
+- \(\Delta K_i\)：相邻行权价差  
+- \(Q(K_i)\)：对应中间价  
+- \(F\)：远期价格  
+- \(K_0\)：平值行权价  
+
+---
+
+### 5. 插值得到 30 天方差
+对两组期限 \(T_1, T_2\) 的方差 \(\sigma_1^2, \sigma_2^2\) 线性插值：
+
+![sigma30](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Csigma_%7B30%7D%5E2%20%3D%20%5Cfrac%7BT_1%5Csigma_1%5E2(T_2-30)%2BT_2%5Csigma_2%5E2(30-T_1)%7D%7BT_2-T_1%7D)
+
+---
+
+### 6. 计算最终 CNVIX 指数
+将方差年化并取平方根：
+
+![CNVIX](https://math.vercel.app/?from=%5Cdisplaystyle%20%5Cmathrm%7BCNVIX%7D%20%3D%20100%20%5Ctimes%20%5Csqrt%7B%5Csigma_%7B30%7D%5E2%20%5Ctimes%20%5Cfrac%7B365%7D%7B30%7D%7D)
+
+---
+
+以上步骤即可从期权 CSV 数据中逐日计算得到 CNVIX 指数。
+
 
 ## Confidentiality
 Modification of the  `.gitignore` file must be careful. It prevents the commits of confidential data.
