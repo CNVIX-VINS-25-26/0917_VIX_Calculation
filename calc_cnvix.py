@@ -16,6 +16,8 @@ from datetime import datetime
 INPUT_FILE = "option_50ETF_all.csv"
 OUTPUT_FILE = "CNVIX_daily.csv"
 RISK_FREE_RATE = 0.03  # 无风险利率近似（年化）
+TRADING_DAYS_PER_YEAR = 252
+TARGET_TRADING_DAYS = 30
 
 # === Step 1: 读取与预处理 ===
 df = pd.read_csv(INPUT_FILE)
@@ -23,6 +25,28 @@ df['date'] = pd.to_datetime(df['date'])
 df['exe_enddate'] = pd.to_datetime(df['exe_enddate'])
 df = df[df['exe_mode'].isin(['call', 'put'])]  # 确保数据干净
 df = df.dropna(subset=['exe_price', 'close', 'ptmday'])
+
+# 基于交易日顺序计算剩余交易天数
+trading_days = np.sort(df['date'].unique())
+trading_day_to_idx = {day: idx for idx, day in enumerate(trading_days)}
+df['trade_day_idx'] = df['date'].map(trading_day_to_idx)
+
+expiry_idx = df['exe_enddate'].map(trading_day_to_idx)
+missing_expiry = expiry_idx.isna()
+if missing_expiry.any():
+    insertion_pos = pd.Series(
+        np.searchsorted(trading_days, df.loc[missing_expiry, 'exe_enddate'].values),
+        index=expiry_idx.index[missing_expiry],
+        dtype=float
+    )
+    insertion_pos[insertion_pos >= len(trading_days)] = np.nan
+    expiry_idx.loc[missing_expiry] = insertion_pos
+
+df['expiry_trade_idx'] = expiry_idx
+df = df.dropna(subset=['expiry_trade_idx'])
+df['expiry_trade_idx'] = df['expiry_trade_idx'].astype(int)
+df['tdm_trading'] = df['expiry_trade_idx'] - df['trade_day_idx']
+df = df[df['tdm_trading'] > 0]
 
 # 转换类型
 df['exe_price'] = df['exe_price'].astype(float)
@@ -33,7 +57,7 @@ df['ptmday'] = df['ptmday'].astype(float)
 def calc_cnvix_for_date(df_day):
     """对单个交易日计算CNVIX"""
     # 找出各到期日剩余天数
-    maturity_days = df_day.groupby('exe_enddate')['ptmday'].mean().sort_values()
+    maturity_days = df_day.groupby('exe_enddate')['tdm_trading'].mean().sort_values()
     if len(maturity_days) < 2:
         return np.nan  # 少于两组到期日无法计算
 
@@ -53,7 +77,7 @@ def calc_cnvix_for_date(df_day):
         if merged.empty:
             continue
 
-        T = sub['ptmday'].iloc[0] / 365
+        T = sub['tdm_trading'].iloc[0] / TRADING_DAYS_PER_YEAR
         r = RISK_FREE_RATE
 
         # 计算远期价格 F
@@ -82,10 +106,10 @@ def calc_cnvix_for_date(df_day):
 
     # 线性插值至30天
     (T1, s1), (T2, s2) = sorted(results, key=lambda x: x[0])
-    T_target = 30 / 365
+    T_target = TARGET_TRADING_DAYS / TRADING_DAYS_PER_YEAR
     sigma2_30 = (T1 * s1 * (T2 - T_target) + T2 * s2 * (T_target - T1)) / (T2 - T1)
 
-    CNVIX = 100 * math.sqrt(sigma2_30 * 365 / 30)
+    CNVIX = 100 * math.sqrt(sigma2_30 * TRADING_DAYS_PER_YEAR / TARGET_TRADING_DAYS)
     return CNVIX
 
 # === Step 3: 按日期批量计算 ===
